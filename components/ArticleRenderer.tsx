@@ -18,7 +18,7 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
   // Text-to-Speech State
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  // Store multiple utterances to prevent garbage collection issues and handle long text
+  // Store multiple utterances to prevent garbage collection issues
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
 
   // Feedback State
@@ -73,7 +73,9 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
     // Stop speaking if the component unmounts or content changes
     return () => {
       isMounted = false;
-      window.speechSynthesis.cancel();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       setIsSpeaking(false);
       setIsPaused(false);
       utterancesRef.current = [];
@@ -81,6 +83,11 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
   }, [content.title, content.imagePrompt]);
 
   const handleSpeak = () => {
+    if (!('speechSynthesis' in window)) {
+      console.warn("Text-to-speech not supported");
+      return;
+    }
+
     if (isPaused) {
       window.speechSynthesis.resume();
       setIsPaused(false);
@@ -96,34 +103,35 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
     window.speechSynthesis.cancel();
 
     // Helper to clean text
-    const stripBrackets = (str: string) => str.replace(/\[\[/g, '').replace(/\]\]/g, '');
+    const safeText = (t: string | undefined | null) => t ? t.replace(/\[\[/g, '').replace(/\]\]/g, '').trim() : '';
 
     // Prepare chunks to speak
-    // Chunking avoids "text-too-long" errors in some browsers and improves queue management
+    // Chunking avoids "text-too-long" errors in some browsers
     const chunks: string[] = [
-      content.title,
-      content.subtitle,
+      safeText(content.title),
+      safeText(content.subtitle),
       "Academic Context.",
-      content.academicContext
+      safeText(content.academicContext)
     ];
 
     (content.sections || []).forEach(s => {
-      chunks.push(s.heading);
+      chunks.push(safeText(s.heading));
       if (s.body) {
-        // Split body by newlines to keep chunks manageable (e.g. paragraphs)
-        const paragraphs = s.body.split('\n').map(p => stripBrackets(p).trim()).filter(p => p.length > 0);
+        // Split body by newlines to keep chunks manageable
+        const paragraphs = s.body.split('\n').map(p => safeText(p)).filter(p => p.length > 0);
         chunks.push(...paragraphs);
       }
     });
 
+    const validChunks = chunks.filter(c => c.length > 0);
     const newUtterances: SpeechSynthesisUtterance[] = [];
 
-    chunks.forEach((text, index) => {
+    validChunks.forEach((text, index) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN'; 
       
-      // We only attach onend to the last utterance to signal completion
-      if (index === chunks.length - 1) {
+      // We only attach onend to the last utterance to signal completion of the whole article
+      if (index === validChunks.length - 1) {
         utterance.onend = () => {
           setIsSpeaking(false);
           setIsPaused(false);
@@ -132,7 +140,7 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
       }
 
       utterance.onerror = (e) => {
-        // Ignore errors caused by manual cancellation/interruption
+        // Ignore errors caused by manual cancellation/interruption which are expected
         if (e.error === 'canceled' || e.error === 'interrupted') return;
         
         console.error("Speech synthesis error:", e.error);
@@ -141,11 +149,16 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
       };
 
       newUtterances.push(utterance);
-      window.speechSynthesis.speak(utterance);
     });
 
     utterancesRef.current = newUtterances;
-    setIsSpeaking(true);
+    
+    // Queue all chunks
+    newUtterances.forEach(u => window.speechSynthesis.speak(u));
+    
+    if (newUtterances.length > 0) {
+      setIsSpeaking(true);
+    }
   };
 
   const handlePause = () => {
@@ -156,7 +169,9 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
   };
 
   const handleStop = () => {
-    window.speechSynthesis.cancel();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     setIsSpeaking(false);
     setIsPaused(false);
     utterancesRef.current = [];
@@ -173,10 +188,14 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
   const handleCopyCitation = () => {
     const today = new Date().toISOString().split('T')[0];
     const citation = `Gemini 2.5 Flash (${today})`;
-    navigator.clipboard.writeText(citation).then(() => {
-      setCitationCopied(true);
-      setTimeout(() => setCitationCopied(false), 2000);
-    });
+    
+    // Clipboard API might fail in non-secure contexts
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(citation).then(() => {
+          setCitationCopied(true);
+          setTimeout(() => setCitationCopied(false), 2000);
+        }).catch(err => console.warn("Citation copy failed", err));
+    }
   };
 
   // Helper to parse text and render glossary terms

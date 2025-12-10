@@ -9,7 +9,7 @@ interface TimelineHorizontalProps {
 
 const TimelineHorizontal: React.FC<TimelineHorizontalProps> = ({ selectedEra, onSelectEra }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     // Scroll selected item into view smoothly
