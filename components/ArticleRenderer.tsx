@@ -198,29 +198,56 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
     }
   };
 
-  // Helper to parse text and render glossary terms
-  const renderTextWithGlossary = (text: string) => {
+  // Helper to parse text and render glossary terms and date markers
+  const renderRichText = (text: string) => {
+    // 1. Split by Glossary terms [[term]]
+    // The capturing group ( ) in split includes the separators in the result array
     const parts = text.split(/(\[\[.*?\]\])/g);
+
     return parts.map((part, index) => {
+      // Handle Glossary Term
       if (part.startsWith('[[') && part.endsWith(']]')) {
         const termText = part.slice(2, -2);
-        // Find definition - case insensitive check
         const glossaryItem = content.glossary?.find(g => g.term.toLowerCase() === termText.toLowerCase()) || { term: termText, definition: "Definition unavailable." };
         
         return (
           <button
             key={index}
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveGlossaryTerm(glossaryItem);
-            }}
-            className="text-blue-700 font-medium hover:text-blue-900 border-b border-dotted border-blue-500 cursor-help transition-colors mx-1"
+            onClick={(e) => { e.stopPropagation(); setActiveGlossaryTerm(glossaryItem); }}
+            className="inline-flex items-center gap-1 mx-1 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-colors cursor-help align-baseline transform hover:scale-105"
+            title="Click for definition"
           >
             {termText}
+            {/* Small info icon */}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
+              <path fillRule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0ZM9 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6.75 8a.75.75 0 0 0 0 1.5h.75v1.75a.75.75 0 0 0 1.5 0v-2.5A.75.75 0 0 0 8.25 8h-1.5Z" clipRule="evenodd" />
+            </svg>
           </button>
         );
       }
-      return <span key={index}>{part}</span>;
+
+      // Handle Dates/Events in plain text parts
+      // Regex detects years (e.g. 1066, 1700s, 43 AD) and centuries (e.g. 5th century)
+      // Matches: 400-2029 to avoid small numbers like '100 words'
+      const dateRegex = /(\b(?:AD\s*)?(?:4[0-9]{2}|[5-9][0-9]{2}|1[0-9]{3}|20[0-2][0-9])(?:s|\s*BC|\s*AD)?\b|\b\d{1,2}(?:st|nd|rd|th)\s+[Cc]entury\b)/g;
+      
+      const subParts = part.split(dateRegex);
+      
+      return subParts.map((subPart, subIndex) => {
+        // Since split with capturing group outputs [text, match, text, match...], 
+        // odd indices are matches.
+        if (subIndex % 2 === 1) {
+             return (
+                <span key={`${index}-${subIndex}`} className="inline-flex items-center mx-1 px-1.5 py-0.5 rounded text-xs font-bold font-serif text-amber-700 bg-amber-50 border border-amber-200 select-none whitespace-nowrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 mr-1 opacity-70">
+                      <path fillRule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clipRule="evenodd" />
+                    </svg>
+                    {subPart}
+                </span>
+            );
+        }
+        return <span key={`${index}-${subIndex}`}>{subPart}</span>;
+      });
     });
   };
 
@@ -398,11 +425,11 @@ const ArticleRenderer: React.FC<ArticleRendererProps> = ({ content, onTopicClick
             <div 
               className="prose prose-lg text-gray-700 leading-relaxed font-sans text-justify"
             >
-              {/* Splitting by newline and then parsing glossary terms in each paragraph */}
+              {/* Splitting by newline and then parsing glossary terms and dates in each paragraph */}
               {(section.body || '').split('\n').map((paragraph, pIdx) => (
                  paragraph.trim().length > 0 && 
                  <p key={pIdx} className="mb-4">
-                   {renderTextWithGlossary(paragraph)}
+                   {renderRichText(paragraph)}
                  </p>
               ))}
             </div>
